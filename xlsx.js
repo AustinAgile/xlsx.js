@@ -8,8 +8,9 @@ if ((typeof JSZip === 'undefined' || !JSZip) && typeof require === 'function') {
 	var JSZip = require('node-zip');
 }
 
-function xlsx(file) { 
+function xlsx(file, options) { 
 	'use strict'; // v2.3.2
+	options = options || { base64: true };
 
 	var result, zip = new JSZip(), zipTime, processTime, s, f, i, j, k, l, t, w, sharedStrings, styles, index, data, val, style, borders, border, borderIndex, fonts, font, fontIndex,
 		docProps, xl, xlWorksheets, worksheet, contentTypes = [[], []], props = [], xlRels = [], worksheets = [], id, columns, cols, colWidth, cell, row, merges, merged,
