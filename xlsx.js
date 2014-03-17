@@ -47,7 +47,7 @@ function xlsx(file, options) {
 	
 	function unescapeXML(s) { return typeof s === 'string' ? s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;/g, '\'') : ''; }
 
-   if (typeof file === 'string') { // Load
+	if (typeof file === 'string') { // Load
 		zipTime = Date.now();
 		zip = zip.load(file, { base64: true });
 		result = { worksheets: [], zipTime: Date.now() - zipTime };
@@ -164,9 +164,11 @@ function xlsx(file, options) {
 			merges = [];
 			i = -1; l = data.length;
 			while (++i < l) {
+				if (data[i] == undefined) {continue;}//Encoutered a row index (i) that has no values in any column.
 				j = -1; k = data[i].length;
 				s += '<row r="' + (i + 1) + '" x14ac:dyDescent="0.25">';
 				while (++j < k) {
+					if (data[i][j] == undefined) {continue;}//Encountered a cell index (j) in row[i] that has no cell value.
 					cell = data[i][j]; val = cell.hasOwnProperty('value') ? cell.value : cell; t = '';
 					style = { // supported styles: borders, hAlign, formatCode and font style
 						borders: cell.borders, 
@@ -253,6 +255,7 @@ function xlsx(file, options) {
 
 			cols = []
 			for (i = 0; i < columns.length; i++) {
+				if (columns[i] == undefined) {continue;}//Encountered a column index (i) that has no values in any row.
 				if (columns[i].autoWidth) {
 					cols.push('<col min="', i+1, '" max="', i+1, '" width="', columns[i].max, '" bestFit="1"/>');
 				}
