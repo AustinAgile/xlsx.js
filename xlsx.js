@@ -10,7 +10,7 @@ if ((typeof JSZip === 'undefined' || !JSZip) && typeof require === 'function') {
 
 function xlsx(file, options) { 
 	'use strict'; // v2.3.2
-	options = options || { base64: true };
+	options = options || { base64: true, font: null };
 
 	var result, zip = new JSZip(), zipTime, processTime, s, f, i, j, k, l, t, w, sharedStrings, styles, index, data, val, style, borders, border, borderIndex, fonts, font, fontIndex,
 		docProps, xl, xlWorksheets, worksheet, contentTypes = [[], []], props = [], xlRels = [], worksheets = [], id, columns, cols, colWidth, cell, row, merges, merged,
@@ -186,7 +186,11 @@ function xlsx(file, options) {
 						val = escapeXML(val);
 						sharedStrings[1]++; // Increment total count, unique count derived from sharedStrings[0].length
 						index = sharedStrings[0].indexOf(val);
-						colWidth = val.length;
+						if (options.font) {
+							colWidth = options.font.measureText(val, 11).width;
+						} else {
+							colWidth = val.length;
+						}
 						if (index < 0) {
 						 	index = sharedStrings[0].push(val) - 1; 
 						}
@@ -195,16 +199,32 @@ function xlsx(file, options) {
 					}
 					else if (typeof val === 'boolean') { 
 						val = (val ? 1 : 0); t = 'b'; 
-						colWidth = 1;
+						if (options.font) {
+							colWidth = options.font.measureText("FALSE", 11).width;
+						} else {
+							colWidth = 1;
+						}
 					}
 					else if (typeOf(val) === 'date') { 
 						val = convertDate(val); 
 						style.formatCode = cell.formatCode || 'mm-dd-yy'; 
-						colWidth = val.length;
+						if (options.font) {
+							colWidth = options.font.measureText(val, 11).width;
+						} else {
+							colWidth = val.length;
+						}
 					}
 					else if (typeof val === 'object') { val = null; } // unsupported value
-					else { colWidth = (''+val).length; } // number, or string which is a number
-					
+					else {// number, or string which is a number
+						if (options.font) {
+							colWidth = options.font.measureText(val.toString(), 11).width;
+						} else {
+							colWidth = (''+val).length;
+						}
+					}
+
+					if (options.font) {colWidth = colWidth/4.5;}
+
 					// use stringified version as unic and reproductible style signature
 					style = JSON.stringify(style);
 					index = styles.indexOf(style);
