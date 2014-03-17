@@ -164,6 +164,9 @@ function xlsx(file, options) {
 			merges = [];
 			i = -1; l = data.length;
 			while (++i < l) {
+				if (options.progress) {
+					options.progress(i);
+				}
 				if (data[i] == undefined) {continue;}//Encoutered a row index (i) that has no values in any column.
 				j = -1; k = data[i].length;
 				s += '<row r="' + (i + 1) + '" x14ac:dyDescent="0.25">';
