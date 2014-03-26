@@ -8,7 +8,7 @@ if ((typeof JSZip === 'undefined' || !JSZip) && typeof require === 'function') {
 	var JSZip = require('node-zip');
 }
 
-function xlsx(file, options) { 
+function xlsx(file, options) {
 	'use strict'; // v2.3.2
 	options = options || { base64: true, font: null };
 
@@ -29,10 +29,10 @@ function xlsx(file, options) {
 	}
 
 	function convertDate(input) {
-		var d = new Date(1900, 0, 0),
+		var d = result.isMac ? new Date(1904, 0, 0) : new Date(1900, 0, 0),
 			isDateObject = typeof input === 'object',
 			offset = ((isDateObject ? input.getTimezoneOffset() : (new Date()).getTimezoneOffset()) - d.getTimezoneOffset()) * 60000;
-		return isDateObject ? ((input - d - offset ) / 86400000) + 1 : new Date(+d - offset + (input - 1) * 86400000);
+		return isDateObject ? ((input - d - offset ) / 86400000) + 1 : new Date(+d - offset +input * 86400000);
 	}
 
 	function typeOf(obj) {
@@ -96,6 +96,11 @@ function xlsx(file, options) {
 				else { t = 'unknown'; }
 				styles.unshift({ formatCode: f, type: t });
 			}
+		}
+		if (s = zip.file('docProps/app.xml')) {
+			s = s.asText();
+			s = s.substr(s.indexOf('<Application>') + 13);
+			result.isMac = s.substring(0, s.indexOf('</Application>')) == "Microsoft Macintosh Excel";
 		}
 
 		// Get worksheet info from "xl/worksheets/sheetX.xml"
