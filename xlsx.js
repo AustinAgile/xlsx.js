@@ -47,6 +47,131 @@ function xlsx(file, options) {
 	
 	function unescapeXML(s) { return typeof s === 'string' ? s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;/g, '\'') : ''; }
 
+		function rowfunction() {
+			timer1 = Date.now();
+			
+			if (options.progress) {
+				options.progress(i);
+			}
+			if (data[i] == undefined) {return;}//Encoutered a row index (i) that has no values in any column.
+			j = -1; k = data[i].length;
+			s += '<row r="' + (i + 1) + '" x14ac:dyDescent="0.25">';
+			while (++j < k) {
+				if (data[i][j] == undefined) {continue;}//Encountered a cell index (j) in row[i] that has no cell value.
+				cell = data[i][j]; val = cell.hasOwnProperty('value') ? cell.value : cell; t = '';
+				style = { // supported styles: borders, hAlign, formatCode and font style
+					borders: cell.borders, 
+					hAlign: cell.hAlign,
+					vAlign: cell.vAlign,
+					bold: cell.bold,
+					italic: cell.italic,
+					fontName: cell.fontName,
+					fontSize: cell.fontSize,
+					formatCode: cell.formatCode || 'General'
+				};
+				timer2 = Date.now();
+				times.a += (timer2 - timer1);
+				timer1 = timer2;
+				colWidth = 0;
+				if (val && typeof val === 'string' && !isFinite(val)) { 
+					// If value is string, and not string of just a number, place a sharedString reference instead of the value
+					val = escapeXML(val);
+					sharedStrings[1]++; // Increment total count, unique count derived from sharedStrings[0].length
+					index = sharedStrings[0].indexOf(val);
+					if (options.font) {
+						colWidth = options.font.measureText(val, 11).width;
+					} else {
+						colWidth = val.length;
+					}
+					if (index < 0) {
+					 	index = sharedStrings[0].push(val) - 1; 
+					}
+					val = index;
+					t = 's';
+				}
+				else if (typeof val === 'boolean') { 
+					val = (val ? 1 : 0); t = 'b'; 
+					if (options.font) {
+						colWidth = options.font.measureText("FALSE", 11).width;
+					} else {
+						colWidth = 1;
+					}
+				}
+				else if (typeOf(val) === 'date') { 
+					val = convertDate(val); 
+					style.formatCode = cell.formatCode || 'mm-dd-yy'; 
+					if (options.font) {
+						colWidth = options.font.measureText(val, 11).width;
+					} else {
+						colWidth = val.length;
+					}
+				}
+				else if (typeof val === 'object') { val = null; } // unsupported value
+				else {// number, or string which is a number
+					if (options.font) {
+						colWidth = options.font.measureText(val.toString(), 11).width;
+					} else {
+						colWidth = (''+val).length;
+					}
+				}
+				timer2 = Date.now();
+				times.b += (timer2 - timer1);
+				timer1 = timer2;
+
+				if (options.font) {colWidth = colWidth/4.5;}
+
+				// use stringified version as unic and reproductible style signature
+				style = JSON.stringify(style);
+				index = styles.indexOf(style);
+				if (index < 0) { style = styles.push(style) - 1; }
+				else { style = index; }
+				// keeps largest cell in column, and autoWidth flag that may be set on any cell
+				if (columns[j] == null) { columns[j] = { autoWidth: false, max:0 }; }
+				if (cell.autoWidth) { columns[j].autoWidth = true; }
+				if (colWidth > columns[j].max) { columns[j].max = colWidth; }
+				// store merges if needed and add missing cells. Cannot have rowSpan AND colSpan
+				if (cell.colSpan > 1) {
+					// horizontal merge. ex: B12:E12. Add missing cells (with same attribute but value) to current row
+					merges.push([numAlpha(j) + (i + 1), numAlpha(j+cell.colSpan-1) + (i + 1)]);
+					merged = [j, 0]
+					for (var m = 0; m < cell.colSpan-1; m++) {
+						merged.push(cell);
+					}
+					data[i].splice.apply(data[i], merged);
+					k += cell.colSpan-1;
+				} else if (cell.rowSpan > 1) {
+					// vertical merge. ex: B12:B15. Add missing cells (with same attribute but value) to next columns
+					for (var m = 1; m < cell.rowSpan; m++) {
+						if (data[i+m]) {
+							data[i+m].splice(j, 0, cell)
+						} else {
+							// readh the end of data
+							cell.rowSpan = m;
+							break;
+						}
+					}
+					merges.push([numAlpha(j) + (i + 1), numAlpha(j) + (i + cell.rowSpan)]);
+				}
+				if (cell.rowSpan > 1 ||cell.colSpan > 1) {
+					// deletes value, rowSpan and colSpan from cell to avoid refering it from copied cells
+					delete cell.value;
+					delete cell.rowSpan;
+					delete cell.colSpan;
+				}
+				s += '<c r="' + numAlpha(j) + (i + 1) + '"' + (style ? ' s="' + style + '"' : '') + (t ? ' t="' + t + '"' : '');
+				if (val != null) {
+					s += '>' + (cell.formula ? '<f>' + cell.formula + '</f>' : '') + '<v>' + val + '</v></c>';
+				} else {
+					s += '/>';
+				}
+				timer2 = Date.now();
+				times.c += (timer2 - timer1);
+				timer1 = timer2;
+			}
+			s += '</row>';
+		}
+		
+		
 	if (typeof file === 'string') { // Load
 		zipTime = Date.now();
 		zip = zip.load(file, { base64: true });
@@ -158,8 +283,13 @@ function xlsx(file, options) {
 		borders = new Array(1);
 		fonts = new Array(1);
 		
+		
+
+		
 		w = file.worksheets.length;
 		while (w--) { 
+			var times = {a:0, b:0, c:0};
+			var timer1, timer2;
 			// Generate worksheet (gather sharedStrings), and possibly table files, then generate entries for constant files below
 			id = w + 1;
 			// Generate sheetX.xml in var s
@@ -169,6 +299,11 @@ function xlsx(file, options) {
 			merges = [];
 			i = -1; l = data.length;
 			while (++i < l) {
+//				data.forEach(rowfunction);
+				rowfunction();
+/*
+				timer1 = Date.now();
+				
 				if (options.progress) {
 					options.progress(i);
 				}
@@ -188,6 +323,9 @@ function xlsx(file, options) {
 						fontSize: cell.fontSize,
 						formatCode: cell.formatCode || 'General'
 					};
+					timer2 = Date.now();
+					times.a += (timer2 - timer1);
+					timer1 = timer2;
 					colWidth = 0;
 					if (val && typeof val === 'string' && !isFinite(val)) { 
 						// If value is string, and not string of just a number, place a sharedString reference instead of the value
@@ -230,6 +368,9 @@ function xlsx(file, options) {
 							colWidth = (''+val).length;
 						}
 					}
+					timer2 = Date.now();
+					times.b += (timer2 - timer1);
+					timer1 = timer2;
 
 					if (options.font) {colWidth = colWidth/4.5;}
 
@@ -277,9 +418,15 @@ function xlsx(file, options) {
 					} else {
 						s += '/>';
 					}
+					timer2 = Date.now();
+					times.c += (timer2 - timer1);
+					timer1 = timer2;
 				}
 				s += '</row>';
+*/
 			}
+			console.log("done looping");
+			console.log(times);
 
 			cols = []
 			for (i = 0; i < columns.length; i++) {
@@ -332,6 +479,7 @@ function xlsx(file, options) {
 			xlRels.unshift('<Relationship Id="rId' + id + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + id + '.xml"/>');
 			worksheets.unshift('<sheet name="' + (escapeXML(worksheet.name) || 'Sheet' + id) + '" sheetId="' + id + '" r:id="rId' + id + '"/>');
 		}
+		console.log("done xmling");
 
 		// xl/styles.xml
 		i = styles.length; t = [];
@@ -425,8 +573,11 @@ function xlsx(file, options) {
 			}
 			styles[i].push('</xf>');
 			styles[i] = styles[i].join('');
-		}
+		
+}		console.log("done styling");
+
 		t = t.length ? '<numFmts count="' + t.length + '">' + t.join('') + '</numFmts>' : '';
+		console.log("done joining");
 
 		xl.file('styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x14ac" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac">'
 			+ t + '<fonts count="'+ fonts.length + '" x14ac:knownFonts="1"><font><sz val="' + defaultFontSize + '"/><color theme="1"/><name val="' + defaultFontName + '"/><family val="2"/>'
@@ -438,32 +589,38 @@ function xlsx(file, options) {
 			+ '<tableStyles count="0" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16"/>'
 			+ '<extLst><ext uri="{EB79DEF2-80B8-43e5-95BD-54CBDDF9020C}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">'
 			+ '<x14:slicerStyles defaultSlicerStyle="SlicerStyleLight1"/></ext></extLst></styleSheet>');
+		console.log("done filing");
 
 		// [Content_Types].xml
 		zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
 			+ contentTypes[0].join('') + '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
 			+ contentTypes[1].join('') + '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>');
+		console.log("done zipping");
 
 		// docProps/app.xml
 		docProps.file('app.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>XLSX.js</Application><DocSecurity>0</DocSecurity><ScaleCrop>false</ScaleCrop><HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>Worksheets</vt:lpstr></vt:variant><vt:variant><vt:i4>'
 			+ file.worksheets.length + '</vt:i4></vt:variant></vt:vector></HeadingPairs><TitlesOfParts><vt:vector size="' + props.length + '" baseType="lpstr"><vt:lpstr>' + props.join('</vt:lpstr><vt:lpstr>')
 			+ '</vt:lpstr></vt:vector></TitlesOfParts><Manager></Manager><Company>Microsoft Corporation</Company><LinksUpToDate>false</LinksUpToDate><SharedDoc>false</SharedDoc><HyperlinksChanged>false</HyperlinksChanged><AppVersion>1.0</AppVersion></Properties>');
+		console.log("done proping");
 
 		// xl/_rels/workbook.xml.rels
 		xl.folder('_rels').file('workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
 			+ xlRels.join('') + '<Relationship Id="rId' + (xlRels.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>'
 			+ '<Relationship Id="rId' + (xlRels.length + 2) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
 			+ '<Relationship Id="rId' + (xlRels.length + 3) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/></Relationships>');
+		console.log("done folding");
 
 		// xl/sharedStrings.xml
 		xl.file('sharedStrings.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'
 			+ sharedStrings[1] + '" uniqueCount="' + sharedStrings[0].length + '"><si><t>' + sharedStrings[0].join('</t></si><si><t>') + '</t></si></sst>');
+		console.log("done sharing");
 
 		// xl/workbook.xml
 		xl.file('workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
 			+ '<fileVersion appName="xl" lastEdited="5" lowestEdited="5" rupBuild="9303"/><workbookPr defaultThemeVersion="124226"/><bookViews><workbookView '
 			+ (file.activeWorksheet ? 'activeTab="' + file.activeWorksheet + '" ' : '') + 'xWindow="480" yWindow="60" windowWidth="18195" windowHeight="8505"/></bookViews><sheets>'
 			+ worksheets.join('') + '</sheets><calcPr fullCalcOnLoad="1"/></workbook>');
+		console.log("done working");
 
 		processTime = Date.now() - processTime;
 		zipTime = Date.now();
@@ -471,8 +628,12 @@ function xlsx(file, options) {
 			base64: zip.generate({ compression: 'DEFLATE' }), zipTime: Date.now() - zipTime, processTime: processTime,
 			href: function() { return 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + this.base64; }
 		};
+		console.log("done basing");
+
 	}
 	return result;
 }
 
+
+		
 if (typeof exports === 'object' && typeof module === 'object') { module.exports = xlsx; } // NodeJs export
